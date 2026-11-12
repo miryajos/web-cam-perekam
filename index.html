@@ -1,0 +1,265 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Perekam Webcam</title>
+<style>
+:root{
+  --bg:#f3f5f7; --panel:#ffffff; --fg:#14202b; --muted:#5b6b7a; --line:#d9e0e6;
+  --accent:#0b6bcb; --accent-fg:#ffffff; --rec:#d4261c; --stage:#0d1318;
+}
+@media (prefers-color-scheme: dark){
+  :root{ --bg:#0e1419; --panel:#161e26; --fg:#e8eef3; --muted:#92a2b1; --line:#27333e;
+    --accent:#4ba3ff; --accent-fg:#06121f; --rec:#ff5a4f; --stage:#05080b; color-scheme:dark; }
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  padding-block:24px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+main{max-width:920px;margin:0 auto;display:grid;gap:16px}
+h1{font-size:1.4rem;margin:0;letter-spacing:-.01em}
+.sub{color:var(--muted);margin:2px 0 0}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:16px}
+.stage{position:relative;background:var(--stage);border-radius:8px;overflow:hidden;aspect-ratio:16/9;max-width:100%}
+video{width:100%;height:100%;object-fit:contain;display:block;background:var(--stage)}
+video.mirror{transform:scaleX(-1)}
+.badge{position:absolute;top:12px;left:12px;display:none;align-items:center;gap:8px;background:rgba(0,0,0,.65);color:#fff;
+  padding:4px 10px;border-radius:999px;font-variant-numeric:tabular-nums;font-size:.9rem}
+.badge.on{display:flex}
+.dot{width:10px;height:10px;border-radius:50%;background:var(--rec);animation:blink 1s infinite}
+.badge.paused .dot{animation:none;background:#f5b700}
+@keyframes blink{50%{opacity:.25}}
+@media (prefers-reduced-motion:reduce){.dot{animation:none}}
+.idle{position:absolute;inset:0;display:grid;place-items:center;text-align:center;color:#9fb0bf;padding:16px}
+.idle.off{display:none}
+.opts{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:12px;margin-top:14px}
+label{display:grid;gap:4px;font-size:.85rem;color:var(--muted);min-width:0}
+select{font:inherit;color:var(--fg);background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:8px;min-width:0;width:100%}
+.check{display:flex;align-items:center;gap:8px;color:var(--fg);font-size:.95rem;padding-top:20px}
+.btns{display:flex;flex-wrap:wrap;gap:10px;margin-top:14px}
+button{font:inherit;cursor:pointer;border-radius:6px;border:1px solid var(--line);background:var(--bg);color:var(--fg);padding:9px 16px}
+button.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-fg);font-weight:600}
+button.rec{background:var(--rec);border-color:var(--rec);color:#fff;font-weight:600}
+button:disabled{opacity:.45;cursor:not-allowed}
+button:focus-visible,select:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.msg{margin-top:12px;color:var(--muted);font-size:.9rem;min-height:1.3em}
+.msg.err{color:var(--rec)}
+h2{font-size:1.05rem;margin:0 0 10px}
+.list{display:grid;gap:14px}
+.item{display:grid;grid-template-columns:minmax(0,260px) minmax(0,1fr);gap:14px;align-items:start}
+.item video{aspect-ratio:16/9;border-radius:6px}
+.meta{display:grid;gap:6px;min-width:0}
+.meta strong{overflow-wrap:anywhere}
+.meta span{color:var(--muted);font-size:.85rem;font-variant-numeric:tabular-nums}
+.row{display:flex;flex-wrap:wrap;gap:8px}
+.empty{color:var(--muted)}
+@media (max-width:560px){.item{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Perekam Webcam</h1>
+    <p class="sub">Rekam kamera dan mikrofon langsung di browser. Video tidak diunggah ke mana pun.</p>
+  </header>
+
+  <section class="panel" aria-label="Kamera">
+    <div class="stage">
+      <video id="preview" class="mirror" autoplay muted playsinline></video>
+      <div id="idle" class="idle"><p>Kamera belum menyala.<br>Tekan <b>Nyalakan kamera</b> lalu izinkan akses di browser.</p></div>
+      <div id="badge" class="badge"><span class="dot"></span><span id="timer">00:00</span><span id="state">REC</span></div>
+    </div>
+
+    <div class="opts">
+      <label for="camSel">Kamera
+        <select id="camSel" disabled><option>Belum ada</option></select>
+      </label>
+      <label for="resSel">Resolusi
+        <select id="resSel">
+          <option value="640x480">640 x 480</option>
+          <option value="1280x720" selected>1280 x 720 (HD)</option>
+          <option value="1920x1080">1920 x 1080 (Full HD)</option>
+        </select>
+      </label>
+      <label class="check" for="micChk"><input id="micChk" type="checkbox" checked> Rekam suara (mikrofon)</label>
+      <label class="check" for="mirrorChk"><input id="mirrorChk" type="checkbox" checked> Cermin pratinjau</label>
+    </div>
+
+    <div class="btns">
+      <button id="startCam" class="primary">Nyalakan kamera</button>
+      <button id="stopCam" disabled>Matikan kamera</button>
+      <button id="recBtn" class="rec" disabled>Mulai rekam</button>
+      <button id="pauseBtn" disabled>Jeda</button>
+      <button id="stopRec" disabled>Berhenti &amp; simpan</button>
+    </div>
+    <div id="msg" class="msg" role="status"></div>
+  </section>
+
+  <section class="panel" aria-label="Hasil rekaman">
+    <h2>Hasil rekaman</h2>
+    <div id="list" class="list"><p class="empty">Belum ada rekaman. Hasil tersimpan sementara di halaman ini; unduh sebelum menutup tab.</p></div>
+  </section>
+</main>
+
+<script>
+(function(){
+  var $ = function(id){ return document.getElementById(id); };
+  var preview=$("preview"), idle=$("idle"), badge=$("badge"), timerEl=$("timer"), stateEl=$("state");
+  var camSel=$("camSel"), resSel=$("resSel"), micChk=$("micChk"), mirrorChk=$("mirrorChk");
+  var startCam=$("startCam"), stopCam=$("stopCam"), recBtn=$("recBtn"), pauseBtn=$("pauseBtn"), stopRec=$("stopRec");
+  var msg=$("msg"), list=$("list");
+
+  var stream=null, recorder=null, chunks=[], mime="", tick=null, elapsed=0, lastStart=0, count=0;
+
+  function say(t, err){ msg.textContent=t||""; msg.className="msg"+(err?" err":""); }
+  function fmt(s){ s=Math.floor(s); var m=Math.floor(s/60), r=s%60; return (m<10?"0":"")+m+":"+(r<10?"0":"")+r; }
+  function pickMime(){
+    var c=["video/webm;codecs=vp9,opus","video/webm;codecs=vp8,opus","video/webm","video/mp4"];
+    if(!window.MediaRecorder) return null;
+    for(var i=0;i<c.length;i++){ if(MediaRecorder.isTypeSupported(c[i])) return c[i]; }
+    return "";
+  }
+  function ext(){ return mime.indexOf("mp4")>-1 ? "mp4" : "webm"; }
+
+  function setUi(){
+    var on=!!stream, rec=!!recorder;
+    startCam.disabled=on; stopCam.disabled=!on||rec;
+    recBtn.disabled=!on||rec; pauseBtn.disabled=!rec; stopRec.disabled=!rec;
+    camSel.disabled=!on||rec; resSel.disabled=rec; micChk.disabled=rec;
+    idle.classList.toggle("off", on);
+  }
+
+  async function loadDevices(){
+    var devs=await navigator.mediaDevices.enumerateDevices();
+    var cams=devs.filter(function(d){return d.kind==="videoinput";});
+    var cur=stream && stream.getVideoTracks()[0] ? stream.getVideoTracks()[0].getSettings().deviceId : "";
+    camSel.innerHTML="";
+    cams.forEach(function(d,i){
+      var o=document.createElement("option");
+      o.value=d.deviceId; o.textContent=d.label||("Kamera "+(i+1));
+      if(d.deviceId===cur) o.selected=true;
+      camSel.appendChild(o);
+    });
+  }
+
+  async function openStream(deviceId){
+    if(!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){
+      say("Browser ini tidak mendukung akses kamera. Buka lewat https:// atau localhost.", true); return;
+    }
+    closeStream();
+    var wh=resSel.value.split("x");
+    var video={width:{ideal:+wh[0]},height:{ideal:+wh[1]}};
+    if(deviceId) video.deviceId={ideal:deviceId};
+    try{
+      try{
+        stream=await navigator.mediaDevices.getUserMedia({video:video,audio:micChk.checked});
+      }catch(e1){
+        if(e1.name==="OverconstrainedError"||e1.name==="ConstraintNotSatisfiedError"){
+          stream=await navigator.mediaDevices.getUserMedia({video:true,audio:micChk.checked});
+        }else{ throw e1; }
+      }
+    }catch(e){
+      stream=null;
+      var m="Kamera tidak bisa dibuka ("+(e.name||"error")+"). Coba resolusi 640 x 480 atau matikan opsi mikrofon.";
+      if(e.name==="NotAllowedError") m="Izin kamera ditolak. Izinkan akses kamera di pengaturan situs browser.";
+      else if(e.name==="NotFoundError") m="Kamera atau mikrofon tidak ditemukan.";
+      else if(e.name==="NotReadableError") m="Kamera sedang dipakai aplikasi lain. Tutup aplikasi itu dulu.";
+      say(m,true); setUi(); return;
+    }
+    preview.srcObject=stream;
+    await loadDevices();
+    var s=stream.getVideoTracks()[0].getSettings();
+    say("Kamera aktif ("+(s.width||"?")+" x "+(s.height||"?")+").");
+    setUi();
+  }
+
+  function closeStream(){
+    if(stream){ stream.getTracks().forEach(function(t){t.stop();}); }
+    stream=null; preview.srcObject=null;
+  }
+
+  function startTimer(){
+    lastStart=Date.now();
+    tick=setInterval(function(){ timerEl.textContent=fmt(elapsed+(Date.now()-lastStart)/1000); },250);
+  }
+  function stopTimer(){
+    if(tick){ clearInterval(tick); tick=null; }
+    elapsed+=(Date.now()-lastStart)/1000;
+  }
+
+  function startRecording(){
+    mime=pickMime();
+    if(mime===null){ say("Browser ini tidak mendukung perekaman (MediaRecorder).", true); return; }
+    chunks=[]; elapsed=0;
+    try{ recorder=mime?new MediaRecorder(stream,{mimeType:mime}):new MediaRecorder(stream); }
+    catch(e){ say("Gagal memulai perekaman: "+e.message, true); recorder=null; return; }
+    if(!mime) mime=recorder.mimeType||"video/webm";
+    recorder.ondataavailable=function(e){ if(e.data && e.data.size) chunks.push(e.data); };
+    recorder.onstop=finishRecording;
+    recorder.start(1000);
+    timerEl.textContent="00:00"; stateEl.textContent="REC";
+    badge.classList.add("on"); badge.classList.remove("paused");
+    startTimer(); pauseBtn.textContent="Jeda";
+    say("Sedang merekam..."); setUi();
+  }
+
+  function finishRecording(){
+    var dur=elapsed;
+    var blob=new Blob(chunks,{type:mime.split(";")[0]});
+    recorder=null; chunks=[];
+    badge.classList.remove("on","paused");
+    addItem(blob,dur); setUi();
+    say("Rekaman disimpan di daftar bawah. Unduh sebelum menutup halaman.");
+  }
+
+  function addItem(blob,dur){
+    count++;
+    var empty=list.querySelector(".empty"); if(empty) empty.remove();
+    var url=URL.createObjectURL(blob);
+    var d=new Date();
+    var pad=function(n){return (n<10?"0":"")+n;};
+    var name="rekaman-"+d.getFullYear()+pad(d.getMonth()+1)+pad(d.getDate())+"-"+pad(d.getHours())+pad(d.getMinutes())+pad(d.getSeconds())+"."+ext();
+    var el=document.createElement("div"); el.className="item";
+    var v=document.createElement("video"); v.src=url; v.controls=true; v.playsInline=true; v.preload="metadata";
+    var meta=document.createElement("div"); meta.className="meta";
+    var t=document.createElement("strong"); t.textContent="Rekaman "+count;
+    var info=document.createElement("span"); info.textContent=fmt(dur)+" · "+(blob.size/1048576).toFixed(1)+" MB · "+ext().toUpperCase();
+    var nm=document.createElement("span"); nm.textContent=name;
+    var row=document.createElement("div"); row.className="row";
+    var dl=document.createElement("a"); dl.href=url; dl.download=name;
+    var dlb=document.createElement("button"); dlb.className="primary"; dlb.textContent="Unduh";
+    dl.appendChild(dlb);
+    var del=document.createElement("button"); del.textContent="Hapus";
+    del.onclick=function(){ URL.revokeObjectURL(url); el.remove(); if(!list.children.length){ list.innerHTML='<p class="empty">Belum ada rekaman.</p>'; } };
+    row.appendChild(dl); row.appendChild(del);
+    meta.appendChild(t); meta.appendChild(info); meta.appendChild(nm); meta.appendChild(row);
+    el.appendChild(v); el.appendChild(meta);
+    list.insertBefore(el,list.firstChild);
+  }
+
+  startCam.onclick=function(){ openStream(""); };
+  stopCam.onclick=function(){ closeStream(); say("Kamera dimatikan."); setUi(); };
+  camSel.onchange=function(){ openStream(camSel.value); };
+  resSel.onchange=function(){ if(stream) openStream(camSel.value); };
+  micChk.onchange=function(){ if(stream) openStream(camSel.value); };
+  mirrorChk.onchange=function(){ preview.classList.toggle("mirror", mirrorChk.checked); };
+  recBtn.onclick=startRecording;
+  pauseBtn.onclick=function(){
+    if(!recorder) return;
+    if(recorder.state==="recording"){
+      recorder.pause(); stopTimer(); stateEl.textContent="JEDA"; badge.classList.add("paused"); pauseBtn.textContent="Lanjut"; say("Dijeda.");
+    }else if(recorder.state==="paused"){
+      recorder.resume(); startTimer(); stateEl.textContent="REC"; badge.classList.remove("paused"); pauseBtn.textContent="Jeda"; say("Sedang merekam...");
+    }
+  };
+  stopRec.onclick=function(){
+    if(!recorder) return;
+    if(recorder.state==="recording") stopTimer();
+    recorder.stop();
+  };
+  window.addEventListener("beforeunload",function(e){ if(recorder){ e.preventDefault(); e.returnValue=""; } });
+  setUi();
+})();
+</script>
+</body>
+</html>
